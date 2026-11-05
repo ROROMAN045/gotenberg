@@ -19,8 +19,9 @@ services:
       - "--chromium-allow-list=.*"
       # Chromium carga lo que diga el HTML y /pdf-proxy/ de domus es público:
       # nada de ficheros locales (salvo /tmp, como por defecto), IPs privadas,
-      # de enlace local o nombres internos sin punto (domus-nginx, n8n, …).
-      - "--chromium-deny-list=^file:(?!//\\/tmp/).*|^[a-z]+://(localhost|127\\.|10\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.|192\\.168\\.|169\\.254\\.|0\\.|\\[|[^./:]+([:/]|$))"
+      # de enlace local o nombres internos sin punto (domus-nginx, n8n, …, también
+      # con punto final: «domus-nginx.»). La frontera de verdad es la red.
+      - "--chromium-deny-list=^file:(?!//\\/tmp/).*|^[a-z]+://(localhost|127\\.|10\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.|192\\.168\\.|169\\.254\\.|0\\.|\\[|[^./:]+\\.?([:/]|$))"
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://127.0.0.1:3000/health"]
       interval: 15s

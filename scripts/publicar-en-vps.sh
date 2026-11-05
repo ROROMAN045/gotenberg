@@ -28,11 +28,15 @@ proyecto_de() { docker inspect -f '{{index .Config.Labels "com.docker.compose.pr
 
 relevo=0
 volver_atras() {
+  # Sin trampa ni -e: aquí cada paso se intenta aunque falle el anterior. Lo
+  # que importa es que el Gotenberg viejo vuelva a estar en marcha.
   trap - ERR
+  set +e
   echo "✗ $1. Vuelvo al Gotenberg de domus." >&2
-  docker compose down >/dev/null 2>&1 || true
-  if docker inspect gotenberg-viejo >/dev/null 2>&1; then docker rename gotenberg-viejo gotenberg; fi
-  docker start gotenberg >/dev/null
+  docker compose down >/dev/null 2>&1
+  [ "$(proyecto_de gotenberg)" = gotenberg ] && docker rm -f gotenberg >/dev/null 2>&1
+  docker inspect gotenberg-viejo >/dev/null 2>&1 && docker rename gotenberg-viejo gotenberg
+  docker start gotenberg >/dev/null || echo "  ¡OJO! El Gotenberg viejo no arranca: mira «docker ps -a» en el VPS." >&2
   echo "  Gotenberg de domus en marcha otra vez." >&2
   exit 1
 }
