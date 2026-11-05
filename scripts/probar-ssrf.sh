@@ -36,7 +36,7 @@ limpiar 2>/dev/null; mkdir -p "$DIR"
 {
   echo "services:"
   echo "  gotenberg: {container_name: $P-gotenberg}"
-  if docker compose -f docker-compose.yml config --services | grep -qx gotenberg-salida; then
+  if docker compose -f docker-compose.yml config --services | grep -cx gotenberg-salida >/dev/null; then
     echo "  gotenberg-salida: {container_name: $P-salida}"
   fi
   echo "networks:"
@@ -82,7 +82,7 @@ pdf normal <<'HTML'
 <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHgAAAB4CAIAAAC2BqGFAAAA60lEQVR4nO3QAQkAIBDAQLN8/yiGsoXCPFiAcWvP6ELr+cEngQbdCjToVqBBtwINuhVo0K1Ag24FGnQr0KBbgQbdCjToVqBBtwINuhVo0K1Ag24FGnQr0KBbgQbdCjToVqBBtwINuhVo0K1Ag24FGnQr0KBbgQbdCjToVqBBtwINuhVo0K1Ag24FGnQr0KBbgQbdCjToVqBBtwINuhVo0K1Ag24FGnQr0KBbgQbdCjToVqBBtwINuhVo0K1Ag24FGnQr0KBbgQbdCjToVqBBtwINuhVo0K1Ag24FGnQr0KBbgQbdCjToVqBBtzrSP8d202hkaAAAAABJRU5ErkJggg=="></body></html>
 HTML
 grep -q FACTURA-DE-PRUEBA "$DIR/normal.txt" && bien "sale el PDF" || mal "no sale el texto del PDF"
-docker exec "$P-texto" pdffonts "/d/normal.pdf" | grep -qi 'DMSans' && bien "con la fuente de Google" || mal "sin la fuente de Google"
+docker exec "$P-texto" pdffonts "/d/normal.pdf" | grep -ci DMSans >/dev/null && bien "con la fuente de Google" || mal "sin la fuente de Google"
 # El QR pedido es de 150×150 (el icono de imagen rota no lo es).
 docker exec "$P-texto" pdfimages -list "/d/normal.pdf" | awk '$4 == 150 && $5 == 150 { ok = 1 } END { exit !ok }' \
   && bien "con el QR" || mal "sin el QR"
@@ -139,7 +139,7 @@ if docker exec "$P-gotenberg" curl -s -o /dev/null -m 8 https://example.com; the
 else
   bien "sin salida directa a internet"
 fi
-if docker compose -f docker-compose.yml config --services | grep -qx gotenberg-salida; then
+if docker compose -f docker-compose.yml config --services | grep -cx gotenberg-salida >/dev/null; then
   por_proxy() { docker exec "$P-gotenberg" curl -s -o /dev/null -m 15 -w '%{http_code}' -x http://gotenberg-salida:3128 "$1" || true; }
   [ "$(por_proxy https://example.com)" = 200 ] && bien "por el proxy, internet sí" || mal "por el proxy no llega a internet"
   for u in http://evil.prueba/ "http://$VIP_FUERA/" http://127.0.0.1:3128/ http://169.254.169.254/; do
