@@ -34,7 +34,10 @@ volver_atras() {
   set +e
   echo "✗ $1. Vuelvo al Gotenberg de domus." >&2
   docker compose down >/dev/null 2>&1
-  [ "$(proyecto_de gotenberg)" = gotenberg ] && docker rm -f gotenberg >/dev/null 2>&1
+  local c
+  for c in gotenberg gotenberg-salida; do
+    [ "$(proyecto_de "$c")" = gotenberg ] && docker rm -f "$c" >/dev/null 2>&1
+  done
   docker inspect gotenberg-viejo >/dev/null 2>&1 && docker rename gotenberg-viejo gotenberg
   docker start gotenberg >/dev/null || echo "  ¡OJO! El Gotenberg viejo no arranca: mira «docker ps -a» en el VPS." >&2
   echo "  Gotenberg de domus en marcha otra vez." >&2
@@ -55,7 +58,8 @@ if ! docker compose up -d --remove-orphans; then
   exit 1
 fi
 
-# Sano = su propio healthcheck (curl a /health dentro del contenedor).
+# Sano = su propio healthcheck (curl a /health dentro del contenedor). Su
+# salida (gotenberg-salida) ya está sana: compose no lo arranca antes.
 sano=0
 for _ in $(seq 1 45); do
   [ "$(docker inspect -f '{{.State.Health.Status}}' gotenberg 2>/dev/null || true)" = healthy ] && { sano=1; break; }

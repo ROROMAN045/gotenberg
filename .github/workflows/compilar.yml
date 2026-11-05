@@ -23,7 +23,7 @@ jobs:
   compilar:
     name: compilar
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     env:
       GITLEAKS: zricethezav/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
       SHELLCHECK: koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d
@@ -83,3 +83,8 @@ jobs:
           for f in scripts/*.sh; do bash -n "$f"; done
           # shellcheck fijado (como en materdev-infra) y sólo nivel «error».
           docker run --rm -v "$PWD:/mnt:ro" -w /mnt "$SHELLCHECK" -S error scripts/*.sh
+
+      # La seguridad de Gotenberg es su configuración: se prueba de verdad
+      # (Gotenberg + su salida + una víctima interna). Necesita internet.
+      - name: Seguridad de Chromium (SSRF)
+        run: bash scripts/probar-ssrf.sh

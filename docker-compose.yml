@@ -6,6 +6,19 @@
 #   · domus: red domus-gotenberg. domus-nginx lo llama como
 #     http://gotenberg:3000 desde /pdf-proxy/ (sólo convert/html, con límite).
 # Un proyecto nuevo: red <proyecto>-gotenberg en materdev-infra y aquí abajo.
+#
+# Lo que llega por /pdf-proxy/ es HTML de cualquiera y Chromium carga lo que
+# diga. Por eso, por capas (y scripts/probar-ssrf.sh lo prueba en «Compilar»):
+#   1. Sin salida directa: todas sus redes son internas. A internet sólo por
+#      gotenberg-salida (squid), que niega toda IP privada DESPUÉS de resolver
+#      el DNS: ni domus-nginx ni nada del VPS por mucho que diga la URL.
+#   2. Sin JavaScript: ningún PDF lo usa, y sin él el HTML no puede leer nada
+#      ni abrir conexiones por su cuenta.
+#   3. Ficheros: sólo los de la propia petición (/tmp/<uuid>/<uuid>/<fichero>).
+#      Nada de fuera, ni listados de carpetas (verían los PDF de otras firmas).
+# --chromium-deny-private-ips no sirve aquí: en una red interna Gotenberg no
+# resuelve nombres de fuera y lo rechazaría todo. Ese filtro lo hace squid
+# (mejor: resuelve y conecta a la misma IP).
 name: gotenberg
 
 services:
@@ -15,24 +28,55 @@ services:
     restart: unless-stopped
     command:
       - "gotenberg"
-      - "--chromium-disable-javascript=false"
-      - "--chromium-allow-list=.*"
-      # Chromium carga lo que diga el HTML y /pdf-proxy/ de domus es público:
-      # nada de ficheros locales (salvo /tmp, como por defecto), IPs privadas,
-      # de enlace local o nombres internos sin punto (domus-nginx, n8n, …, también
-      # con punto final: «domus-nginx.»). La frontera de verdad es la red.
-      - "--chromium-deny-list=^file:(?!//\\/tmp/).*|^[a-z]+://(localhost|127\\.|10\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.|192\\.168\\.|169\\.254\\.|0\\.|\\[|[^./:]+\\.?([:/]|$))"
+      - "--chromium-disable-javascript=true"
+      - "--chromium-proxy-server=http://gotenberg-salida:3128"
+      # Todo http(s) va al proxy, que filtra por IP: Gotenberg no tiene que
+      # resolver nada (en red interna no podría y lo rechazaría). Al arrancar
+      # avisa de que esta lista «lo deja pasar todo»: es a propósito.
+      - "--chromium-allow-list=^(https?://|file:///tmp/)"
+      # Sin comas en estas expresiones: Gotenberg parte la opción por ahí.
+      # Ficheros: sólo los de la propia petición (punto 3).
+      - "--chromium-deny-list=^file:(?!///tmp/[0-9a-f-]{36}/[0-9a-f-]{36}/[^/?#]+$$).*"
+      # Lo que Chromium nunca manda al proxy y abre directo: localhost, 127/8,
+      # 169.254/16, 0.0.0.0 e IPv6 literales. Dentro del contenedor están la API
+      # de Gotenberg y el puerto de depuración de Chromium (que enseña las
+      # demás conversiones en curso).
+      - "--chromium-deny-list=^[a-z]+://([^/?#@]*@)?(localhost|[^/?#@]*\\.localhost|127\\.|0\\.|169\\.254\\.|\\[)"
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://127.0.0.1:3000/health"]
       interval: 15s
       timeout: 5s
       retries: 5
       start_period: 20s
+    depends_on:
+      gotenberg-salida:
+        condition: service_healthy
     networks:
+      - salida
       - domus-gotenberg
 
+  # La salida a internet de Chromium (punto 1): squid/squid.conf.
+  gotenberg-salida:
+    image: ubuntu/squid:7.2-26.04_edge@sha256:9134914972b6119a2265fd96f694a627c68070a2a6d905d1383cd87f9c2e5cdd
+    container_name: gotenberg-salida
+    restart: unless-stopped
+    volumes:
+      - ./squid/squid.conf:/etc/squid/squid.conf:ro
+    healthcheck:
+      test: ["CMD", "/usr/sbin/squid-gnutls", "-k", "check"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - default
+      - salida
+
 networks:
-  # La crea materdev-infra (vps/instalar.sh y, en el Mac, mac/espejo/espejo.sh).
-  # Sólo están en ella domus-nginx y gotenberg.
+  # Gotenberg ↔ su salida. Interna: no lleva a ningún sitio más.
+  salida:
+    internal: true
+  # La crea materdev-infra, interna (vps/instalar.sh y, en el Mac,
+  # mac/espejo/espejo.sh). Sólo están en ella domus-nginx y gotenberg.
   domus-gotenberg:
     external: true
