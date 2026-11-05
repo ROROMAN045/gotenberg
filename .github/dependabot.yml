@@ -1,0 +1,34 @@
+# ── Dependabot: avisos de versiones nuevas como Pull Requests ──────────────
+# Revisa una vez por semana y abre una PR por actualización. No publica nada:
+# cada PR pasa por «Compilar», se prueba en el espejo, se hace merge a mano y
+# se publica con «Publicar», como cualquier cambio.
+#
+# Gotenberg genera todos los PDF de domus: una versión nueva se prueba en el
+# espejo con PDF reales (facturas, certificados) antes de publicarla.
+# Los saltos de versión mayor no se proponen: se deciden a propósito.
+version: 2
+updates:
+  # Imágenes de docker-compose.yml (Gotenberg), con versión y digest.
+  - package-ecosystem: "docker-compose"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Berlin"
+    commit-message:
+      prefix: "chore(componentes)"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  # Acciones de los workflows de GitHub (fijadas por SHA).
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    commit-message:
+      prefix: "chore(ci)"
+    groups:
+      acciones:
+        patterns: ["*"]

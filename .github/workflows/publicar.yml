@@ -1,0 +1,61 @@
+# El botón de publicar: Actions → «Publicar» → Run workflow (rama main).
+#
+# No toca el servidor —GitHub no tiene ninguna llave de él—. Comprueba que el
+# commit de main compiló bien y queda registrado; el VPS
+# (materdev-infra/vps/despliegue, cada minuto) lo ve con un token de sólo
+# lectura, publica EXACTAMENTE ese commit con copia previa y manda un correo
+# con el resultado. Si se renombra este archivo, cambiarlo también allí
+# (WF_PUBLICAR).
+name: Publicar
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: publicar
+  cancel-in-progress: false
+
+jobs:
+  publicar:
+    name: publicar
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Sólo main
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Sólo se publica main. Al pulsar «Run workflow», elige la rama main."
+            exit 1
+          fi
+
+      - name: Este commit compiló bien
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Justo después de un merge, «Compilar» puede seguir en marcha: se espera.
+          for i in $(seq 1 60); do
+            estado="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$GITHUB_SHA&event=push&per_page=20" \
+              --jq '[.workflow_runs[] | select(.name == "Compilar")] | sort_by(.created_at) | last
+                    | if . == null then "sin-empezar" else .status + "/" + (.conclusion // "") end')"
+            case "$estado" in
+              completed/success) echo "Compilación correcta: $GITHUB_SHA"; exit 0 ;;
+              completed/*) echo "::error::La compilación de este commit no salió bien ($estado). No se publica."; exit 1 ;;
+              *) echo "Compilar: $estado… espero 20 s"; sleep 20 ;;
+            esac
+          done
+          echo "::error::«Compilar» no terminó a tiempo. No se publica."
+          exit 1
+
+      - name: Petición registrada
+        run: |
+          {
+            echo "### Publicación pedida"
+            echo ""
+            echo "Commit \`${GITHUB_SHA:0:12}\` de main."
+            echo ""
+            echo "El servidor la recoge en menos de un minuto: copia previa, publicación y un correo con el resultado."
+          } >> "$GITHUB_STEP_SUMMARY"

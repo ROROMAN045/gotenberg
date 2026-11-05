@@ -1,0 +1,33 @@
+# ── Gotenberg: HTML → PDF ───────────────────────────────────────────────────
+#
+# Servicio propio, fuera de domus (hasta 2026-11 vivía en su compose). Sin
+# puertos ni entrada pública (pdf.materdev.com se cerró): cada proyecto que lo
+# usa llega por su propia red, que crea materdev-infra:
+#   · domus: red domus-gotenberg. domus-nginx lo llama como
+#     http://gotenberg:3000 desde /pdf-proxy/ (sólo convert/html, con límite).
+# Un proyecto nuevo: red <proyecto>-gotenberg en materdev-infra y aquí abajo.
+name: gotenberg
+
+services:
+  gotenberg:
+    image: gotenberg/gotenberg:8.39.0@sha256:13672f317b443c793e972b1bd2155ec62a3e7b6891b411e8196442cc053ee5f5
+    container_name: gotenberg
+    restart: unless-stopped
+    command:
+      - "gotenberg"
+      - "--chromium-disable-javascript=false"
+      - "--chromium-allow-list=.*"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:3000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - domus-gotenberg
+
+networks:
+  # La crea materdev-infra (vps/instalar.sh y, en el Mac, mac/espejo/espejo.sh).
+  # Sólo están en ella domus-nginx y gotenberg.
+  domus-gotenberg:
+    external: true
