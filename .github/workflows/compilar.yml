@@ -1,0 +1,90 @@
+# Comprueba Gotenberg en cada Pull Request y en cada commit de main.
+#
+# El VPS sólo publica un commit de main cuando este workflow terminó bien en
+# ese mismo commit (materdev-infra/vps/despliegue/desplegar.sh lo pregunta a
+# la API de GitHub). Si se cambia el nombre «Compilar», hay que cambiarlo allí.
+#
+# No usa ningún secreto ni toca producción. Las acciones van fijadas por commit.
+name: Compilar
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: compilar-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compilar:
+    name: compilar
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GITLEAKS: zricethezav/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
+      SHELLCHECK: koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # para revisar los commits nuevos (secretos)
+
+      - name: Commits a revisar
+        id: rango
+        env:
+          EVENTO: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          ANTES: ${{ github.event.before }}
+        run: |
+          if [ "$EVENTO" = pull_request ]; then
+            base="$PR_BASE"; head="$PR_HEAD"
+          else
+            base="$ANTES"; head="$GITHUB_SHA"
+            git cat-file -e "$base^{commit}" 2>/dev/null || base="$(git rev-parse HEAD~1)"
+          fi
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          echo "head=$head" >> "$GITHUB_OUTPUT"
+
+      - name: Secretos en los commits nuevos (gitleaks)
+        env:
+          BASE: ${{ steps.rango.outputs.base }}
+          HEAD: ${{ steps.rango.outputs.head }}
+        run: |
+          docker run --rm -v "$PWD:/repo" \
+            -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0='*' \
+            "$GITLEAKS" git /repo --no-banner --redact --log-opts="$BASE..$HEAD"
+
+      - name: Marcas de conflicto olvidadas
+        run: |
+          if git grep -nE '^(<<<<<<<|>>>>>>>)( |$)|^=======$' -- ':!*.md'; then
+            echo "::error::Hay marcas de conflicto (<<<<<<< / ======= / >>>>>>>) sin resolver."
+            exit 1
+          fi
+
+      - name: docker-compose válido
+        run: |
+          docker compose -f docker-compose.yml config -q --no-interpolate
+
+      # Regla de la casa: las imágenes que corren, fijadas por digest.
+      - name: Imágenes fijadas por digest
+        run: |
+          sin_fijar="$(docker compose -f docker-compose.yml config --images --no-interpolate | grep -v '@sha256:' || true)"
+          if [ -n "$sin_fijar" ]; then
+            echo "Imágenes sin digest:"; echo "$sin_fijar"; exit 1
+          fi
+
+      - name: Scripts de shell
+        run: |
+          for f in scripts/*.sh; do bash -n "$f"; done
+          # shellcheck fijado (como en materdev-infra) y sólo nivel «error».
+          docker run --rm -v "$PWD:/mnt:ro" -w /mnt "$SHELLCHECK" -S error scripts/*.sh
+
+      # La seguridad de Gotenberg es su configuración: se prueba de verdad
+      # (Gotenberg + su salida + una víctima interna). Necesita internet.
+      - name: Seguridad de Chromium (SSRF)
+        run: bash scripts/probar-ssrf.sh
