@@ -57,7 +57,7 @@ services:
 
   # La salida a internet de Chromium (punto 1): squid/squid.conf.
   gotenberg-salida:
-    image: ubuntu/squid:7.2-26.04_edge@sha256:9134914972b6119a2265fd96f694a627c68070a2a6d905d1383cd87f9c2e5cdd
+    image: ubuntu/squid:7.2-26.04_edge@sha256:42decc7f79b4e1044f4fe9b3a855af2cbfc76652f3191694726e21058443edc9
     container_name: gotenberg-salida
     restart: unless-stopped
     volumes:
